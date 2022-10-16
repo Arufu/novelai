@@ -27,15 +27,13 @@ app = Sanic('qqbot')
 const = Const()
 
 path.insert(0, abspath(join(dirname(__file__), '..')))
-required_env_var = ['NAI_USERNAME', 'NAI_PASSWORD', 'QQ_USERNAME', 'QQ_PASSWORD', 'NAI_IMG_GEN_ENDPOINT']
+required_env_var = ['NAI_USERNAME', 'NAI_PASSWORD', 'NAI_IMG_GEN_ENDPOINT']
 
 if any(env_var not in env for env_var in required_env_var):
     raise RuntimeError('Please ensure that all environment variables are set')
 
 NAI_username = env['NAI_USERNAME']
 NAI_password = env['NAI_PASSWORD']
-QQ_username = env['QQ_USERNAME']
-QQ_password = env['QQ_PASSWORD']
 img_gen_endpoint = env['NAI_IMG_GEN_ENDPOINT']
 subscription_endpoint = env['NAI_SUB_ENDPOINT']
 
@@ -326,7 +324,8 @@ async def gen_and_send(status: ImgGenStatus):
             add_text(reply_msg, msg)
             await send_group_msg(status.ws, req.group_id, msg)
             status.generating = False
-            status.jump_the_queue(req)
+            # Retry on fail (may cause repeatedly sending messages).
+            # status.jump_the_queue(req)
             continue
 
         add_img(img_path, msg)
@@ -415,8 +414,8 @@ def generate_img(req: ImgGenReq, auth):
             'width': req.width,
         }
 
-        # img_gen_api_request = requests.post(img_gen_endpoint, json=img_gen_data, headers=headers)
-        img_gen_api_request = requests.post(google_colab_endpoint, json=google_colab_img_gen_data)
+        img_gen_api_request = requests.post(img_gen_endpoint, json=img_gen_data, headers=headers)
+        # img_gen_api_request = requests.post(google_colab_endpoint, json=google_colab_img_gen_data)
 
         img_gen_output = img_gen_api_request.content
         image64 = img_gen_output[27:-2]
