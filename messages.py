@@ -35,14 +35,14 @@ class MeowMsgs:
             pay_item.append('大图')
             pay = True
 
-        if pay:
-            if len(pay_item) == 1:
-                msg += pay_item[0]
-            else:
-                msg += '和'.join(pay_item)
-                msg += '都'
-            msg += '是要扣除点数的喵！嘛虽然扣的是i佬的点数就是了喵！距离i佬被榨干还有'
-            msg += str(req.points_left)
-            msg += '点喵！大家加油喵！'
+        # if pay:
+        #     if len(pay_item) == 1:
+        #         msg += pay_item[0]
+        #     else:
+        #         msg += '和'.join(pay_item)
+        #         msg += '都'
+        #     msg += '是要扣除点数的喵！嘛虽然扣的是i佬的点数就是了喵！距离i佬被榨干还有'
+        #     msg += str(req.points_left)
+        #     msg += '点喵！大家加油喵！'
 
         return msg

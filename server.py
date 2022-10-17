@@ -22,6 +22,8 @@ from imgGenStatus import ImgGenStatus
 from messages import MeowMsgs
 from constants import Const
 
+google_colab_endpoint = 'https://accent-pixel-base-twins.trycloudflare.com/generate-stream'
+
 app = Sanic('qqbot')
 
 const = Const()
@@ -71,9 +73,10 @@ async def qqbot(request, ws):
     async with ClientSession() as session:
 
         # Login nai and get login auth.
-        api = NovelAI_API(session, logger=logger)
-        auth = await api.high_level.login(NAI_username, NAI_password)
-        logger.info(auth)
+        # api = NovelAI_API(session, logger=logger)
+        # auth = await api.high_level.login(NAI_username, NAI_password)
+        # logger.info(auth)
+        auth = None
 
         gen_status = ImgGenStatus()
         gen_status.ws = ws
@@ -92,8 +95,8 @@ async def qqbot(request, ws):
                 raw_message = raw_message.replace('\n', '')
                 group_id = data['group_id']
                 sender_id = data['sender']['user_id']
-                if AT_ME in raw_message:
-                    if raw_message.strip() == AT_ME:
+                if any(at_me in raw_message for at_me in AT_ME):
+                    if raw_message.strip() in AT_ME:
                         if sender_id == MASTER_ID:
                             reply_msg = '主人大人您找我有什么事喵？(乖巧)'
                         else:
@@ -320,7 +323,7 @@ async def gen_and_send(status: ImgGenStatus):
                 reply_msg = '竟竟竟然手滑了没画出来...主人大人请原谅我喵...(翻滚)'
             else:
                 reply_msg = '手滑了没画出来喵...(抠鼻孔)'
-            reply_msg += ' ...我这就重新画喵！'
+            # reply_msg += ' ...我这就重新画喵！'
             add_text(reply_msg, msg)
             await send_group_msg(status.ws, req.group_id, msg)
             status.generating = False
@@ -380,8 +383,8 @@ def add_img(img_path: str, msg: list):
 def generate_img(req: ImgGenReq, auth):
     seed = random.randint(0, 2 ** 32)
     try:
-        headers = {'authorization': 'Bearer ' + auth,
-                   'content-type': 'application/json'}
+        # headers = {'authorization': 'Bearer ' + auth,
+        #            'content-type': 'application/json'}
 
         # Generate image.
         img_gen_data = {'input': req.tags,
@@ -400,7 +403,6 @@ def generate_img(req: ImgGenReq, auth):
                         }
 
         # Temporary google colab:
-        google_colab_endpoint = 'https://stable-case-radius-tri.trycloudflare.com/generate-stream'
         google_colab_img_gen_data = {
             'height': req.height,
             'n_samples': 1,
@@ -414,8 +416,8 @@ def generate_img(req: ImgGenReq, auth):
             'width': req.width,
         }
 
-        img_gen_api_request = requests.post(img_gen_endpoint, json=img_gen_data, headers=headers)
-        # img_gen_api_request = requests.post(google_colab_endpoint, json=google_colab_img_gen_data)
+        # img_gen_api_request = requests.post(img_gen_endpoint, json=img_gen_data, headers=headers)
+        img_gen_api_request = requests.post(google_colab_endpoint, json=google_colab_img_gen_data)
 
         img_gen_output = img_gen_api_request.content
         image64 = img_gen_output[27:-2]
@@ -428,12 +430,13 @@ def generate_img(req: ImgGenReq, auth):
         logger.info(filename + ' generated under path ' + OUTPUT_PATH + '.')
 
         # Obtain points.
-        obtain_points_api_request = requests.get(subscription_endpoint, headers=headers)
-        sub_output = obtain_points_api_request.json()
-        points = sub_output['trainingStepsLeft']
-        points_by_sub = points['fixedTrainingStepsLeft']
-        points_purchased = points['purchasedTrainingSteps']
-        req.points_left = points_by_sub + points_purchased
+        # obtain_points_api_request = requests.get(subscription_endpoint, headers=headers)
+        # sub_output = obtain_points_api_request.json()
+        # points = sub_output['trainingStepsLeft']
+        # points_by_sub = points['fixedTrainingStepsLeft']
+        # points_purchased = points['purchasedTrainingSteps']
+        # req.points_left = points_by_sub + points_purchased
+        req.points_left = 0
 
         return img_path
     except Exception as err:

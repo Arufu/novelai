@@ -31,7 +31,7 @@ class Const:
             'questionable',
             'naked',
         ]
-        self.at_me = '[CQ:at,qq=2356429990]'
+        self.at_me = ['[CQ:at,qq=2356429990]', '@日和小萝莉']
         self.master_id = 304029882
         self.full_model_ids = [
             self.master_id,
