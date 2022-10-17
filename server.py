@@ -22,7 +22,7 @@ from imgGenStatus import ImgGenStatus
 from messages import MeowMsgs
 from constants import Const
 
-google_colab_endpoint = 'https://accent-pixel-base-twins.trycloudflare.com/generate-stream'
+google_colab_endpoint = 'https://gateway-claim-interest-insects.trycloudflare.com/generate-stream'
 
 app = Sanic('qqbot')
 
