@@ -1,28 +1,26 @@
+import asyncio
+import base64
 import json
 import os
 import random
-from sys import path
+import re
+import threading
+from logging import Logger, StreamHandler
 from os import environ as env
 from os.path import join, abspath, dirname
-from novelai_api import NovelAI_API
-from aiohttp import ClientSession
-from logging import Logger, StreamHandler
-import requests
-import base64
-import asyncio
-import threading
-import re
-import json
-from types import SimpleNamespace
+from sys import path
 
+import requests
+from aiohttp import ClientSession
 from sanic import Sanic
 
+from constants import Const
 from imgGenReq import ImgGenReq
 from imgGenStatus import ImgGenStatus
 from messages import MeowMsgs
-from constants import Const
 
-google_colab_endpoint = 'https://gateway-claim-interest-insects.trycloudflare.com/generate-stream'
+google_colab_endpoint = 'https://spray-reply-maria-forum.trycloudflare.com/generate-stream'
+debug_mode = False
 
 app = Sanic('qqbot')
 
@@ -58,6 +56,12 @@ IMG_GEN_UC_PATTERN = const.img_gen_uc_pattern
 IMG_GEN_SEED_PATTERN = const.img_gen_seed_pattern
 IMG_GEN_HIGH_QUALITY_PATTERN = const.high_quality_pattern
 IMG_GEN_SAFE_PATTERN = const.img_gen_safe_pattern
+IMG_GEN_FULL_PATTERN = const.img_gen_full_pattern
+IMG_GEN_LOW_PRIORITY_PATTERN = const.img_gen_low_priority_pattern
+IMG_GEN_EXTRA_TAGS_PATTERN = const.img_gen_extra_tag_pattern
+IMG_GEN_CLEAR_QUEUE_PATTERN = const.img_gen_clear_queue_pattern
+IMG_GEN_CLEAR_LOW_PRIORITY_QUEUE_PATTERN = const.img_gen_clear_low_priority_queue_pattern
+IMG_GEN_QUEUE_QUERY_PATTERN = const.img_gen_queue_query_pattern
 
 IMG_GEN_PRESET_TAGS = const.tag_presets
 
@@ -66,7 +70,6 @@ IMG_GEN_PRESETS = IMG_GEN_PRESET_TAGS.keys()
 AT_ME = const.at_me
 MASTER_ID = const.master_id
 MAX_NUM_PAGES = const.max_num_pages
-
 
 @app.websocket('/qqbot')
 async def qqbot(request, ws):
@@ -96,6 +99,9 @@ async def qqbot(request, ws):
                 group_id = data['group_id']
                 sender_id = data['sender']['user_id']
                 if any(at_me in raw_message for at_me in AT_ME):
+                    if debug_mode and sender_id != MASTER_ID:
+                        await send_text_with_at(ws, group_id, sender_id, '暂时不接活喵！主人正在调教我喵！(害羞)')
+                        continue
                     if raw_message.strip() in AT_ME:
                         if sender_id == MASTER_ID:
                             reply_msg = '主人大人您找我有什么事喵？(乖巧)'
@@ -103,16 +109,22 @@ async def qqbot(request, ws):
                             reply_msg = '嗯嗯？你这家伙戳我做什么喵？'
                         await send_text_with_at(ws, group_id, sender_id, reply_msg)
                     elif any(kw in raw_message for kw in ['求助', '帮助', '功能', '自我介绍', '喵']):
-                        if sender_id == MASTER_ID:
-                            reply_msg = '喵喵嗯~(翻滚)'
-                        else:
-                            reply_msg = '\n' + '\n'.join([
-                                '我是聪明的画师日和大姐姐喵！',
-                                '1. 找我画画：先@大姐姐我，然后求画<形状>, 写上<标签>就行了喵！形状可以是<竖图>, <横图>和<方图>喵！',
-                                '\t比如：@日和大姐姐，求画<竖图>，标签是<corpse, gothic, guro>',
-                                '2. 问聪明的我问题，先@大姐姐我，然后打上问题喵！',
-                                '\t比如：@日和大姐姐，群里最伟大的人是谁？',
-                            ])
+                        reply_msg = '\n' + '\n'.join([
+                            '我是聪明的画师日和大姐姐喵！',
+                            '1. 找我画画：先@大姐姐我，然后求画形状, 写上<标签>就行了喵！形状可以是竖图,横图,方图,可以加个大字增加尺寸喵！',
+                            '\t也可以要求画风值和步数，不要的标签和张数喵！',
+                            '\t比如：@大姐姐我，求画5张大竖图喵！标签是<corpse, gothic, guro>喵！不要<1boy,smile>喵！画风4,步数50喵！',
+                            '\t顺便喵不是必须的喵！',
+                            '\t关于画风：一般在4到13之间喵！画风越低我的创造灵感越高，画出的图就越唯美喵！',
+                            '\t画风越高，我越会在意你的标签，画出来的东西就越动漫风喵！自己抉择喵！',
+                            '\t关于步数：一般在20到50之间喵！步数越高我画的越慢喵！但是细节越好看喵！',
+                            '\t关于不要的标签：聪明的我已经把大部分大家都不想要的标签都记住了喵！不是特别挑食是不需要再和我说的喵！',
+                            '2. 队列操作喵！先@大姐姐我，然后说关于队列的事情喵！',
+                            '\t队列数: 我会告诉你我的小本子上有几张画等着被我无敌的尾巴画出来喵！大家都要排队喵！',
+                            '\t清空队列: 我会畅快的使用火箭筒炸掉小本子喵！反对无偿加班喵！',
+                            '3. 问聪明的我问题，先@大姐姐我，然后打上问题喵！',
+                            '\t比如：@大姐姐我，群里最伟大的人是谁？',
+                        ])
                         await send_text_with_at(ws, group_id, sender_id, reply_msg)
                     elif '群里最伟大的人是谁' in raw_message:
                         if sender_id == MASTER_ID:
@@ -136,6 +148,26 @@ async def qqbot(request, ws):
                             else:
                                 reply_msg = '大姐姐想不起来你上次要画的是什么了喵！重新说一下吧喵！'
                             await send_text_with_at(ws, group_id, sender_id, reply_msg)
+                    elif IMG_GEN_CLEAR_LOW_PRIORITY_QUEUE_PATTERN.search(raw_message):
+                        if sender_id == MASTER_ID:
+                            reply_msg = '遵命喵！这就炸平低优先等待队列喵！(发射火箭筒)'
+                            gen_status.clear_low_priority_queue()
+                        else:
+                            reply_msg = '你在想屁吃喵！'
+                        await send_text_with_at(ws, group_id, sender_id, reply_msg)
+                        continue
+                    elif IMG_GEN_CLEAR_QUEUE_PATTERN.search(raw_message):
+                        if sender_id == MASTER_ID:
+                            reply_msg = '遵命喵！这就炸平等待队列喵！(发射火箭筒)'
+                            gen_status.clear_queue()
+                        else:
+                            reply_msg = '你在想屁吃喵！'
+                        await send_text_with_at(ws, group_id, sender_id, reply_msg)
+                        continue
+                    elif IMG_GEN_QUEUE_QUERY_PATTERN.search(raw_message):
+                        await send_text_with_at(ws, group_id, sender_id, '队列里有' +
+                                                str(len(gen_status.request_queue)) + '个请求喵！')
+                        continue
                     elif IMG_GEN_SHAPE_PATTERN.search(raw_message) and \
                             (IMG_GEN_TAG_PATTERN.search(raw_message) or
                              any(preset in raw_message for preset in IMG_GEN_PRESETS)):
@@ -192,11 +224,12 @@ async def qqbot(request, ws):
 
                             msg = []
                             add_at(sender_id, msg)
-                            if gen_status.generating:
+                            if len(gen_status.request_queue) > 0:
                                 if sender_id == MASTER_ID:
                                     reply_msg = '喵喵喵！这就插队给主人大人您画' + str(num_pages) + '张喵！马上马上喵！(振奋)'
                                 else:
-                                    reply_msg = str(num_pages) + '张是吧喵？记在小本子上啦喵！不过正在画别的喵！慢慢等喵！'
+                                    reply_msg = str(num_pages) + '张是吧喵？记在小本子上啦喵！不过正在画别的喵！慢慢等喵！' + \
+                                        '队列里有' + str(len(gen_status.request_queue)) + '个请求喵!'
                                 add_text(reply_msg, msg)
                             else:
                                 if sender_id == MASTER_ID:
@@ -215,6 +248,13 @@ async def qqbot(request, ws):
                             if hq_m:
                                 req.tags += ','
                                 req.tags += const.high_quality_tags
+
+                            # Add extra tags.
+                            extra_tags_m = IMG_GEN_EXTRA_TAGS_PATTERN.search(raw_message)
+                            if extra_tags_m:
+                                extra_groups = extra_tags_m.groups()
+                                extra_tags = extra_groups[0]
+                                req.tags += extra_tags
 
                             # Modify steps.
                             steps_m = IMG_GEN_NUM_STEPS_PATTERN.search(raw_message)
@@ -250,11 +290,23 @@ async def qqbot(request, ws):
                             if model_m:
                                 req.model = const.safe_model
 
+                            model_m = IMG_GEN_FULL_PATTERN.search(raw_message)
+                            if model_m and (sender_id in const.full_model_ids):
+                                req.model = const.full_model
+
+                            low_priority_m = IMG_GEN_LOW_PRIORITY_PATTERN.search(raw_message)
+                            if low_priority_m:
+                                enqueue_func = gen_status.enqueue_low_priority
+                                jump_the_queue_func = gen_status.jump_the_queue_low_priority
+                            else:
+                                enqueue_func = gen_status.enqueue
+                                jump_the_queue_func = gen_status.jump_the_queue
+
                             for _ in range(num_pages):
                                 if sender_id == MASTER_ID:
-                                    gen_status.jump_the_queue(req)
+                                    jump_the_queue_func(req)
                                 else:
-                                    gen_status.enqueue(req)
+                                    enqueue_func(req)
                     else:
                         if sender_id == MASTER_ID:
                             reply_msg = '主主主人大人，这么深奥的话语我听不懂喵T_T我真是个笨蛋喵！(惊慌)'
@@ -285,13 +337,18 @@ async def send_group_msg(ws, group_id: str, msg: list):
 async def gen_and_send(status: ImgGenStatus):
     while True:
         # Skip when queue is empty
-        if not status.request_queue:
+        if (not status.request_queue) and (not status.low_priority_request_queue):
             await asyncio.sleep(1)
             continue
 
         # Get and remove an item from the left.
-        req: ImgGenReq = status.request_queue.popleft()
-        status.generating = True
+        if status.request_queue:
+            req: ImgGenReq = status.request_queue.popleft()
+            status.generating = True
+        elif status.low_priority_request_queue:
+            req: ImgGenReq = status.low_priority_request_queue.popleft()
+        else:
+            return
 
         # Skip the request with forbidden tags.
         tags = re.split(const.tags_delimiter, req.tags)
@@ -300,10 +357,7 @@ async def gen_and_send(status: ImgGenStatus):
         if has_forbidden_words:
             msg = []
             add_at(req.sender_id, msg)
-            if req.sender_id == MASTER_ID:
-                reply_msg = '主人大人，这种标签' + req.tags + '请私底下找我偷偷画喵...(羞涩)'
-            else:
-                reply_msg = '仔细看了一下才发现你的图<' + req.tags + '>太糟糕了喵！摔笔喵！不可以色色喵！生气气喵！'
+            reply_msg = '仔细看了一下才发现你的图<' + req.tags + '>太糟糕了喵！摔笔喵！不可以色色喵！生气气喵！'
             add_text(reply_msg, msg)
             await send_group_msg(status.ws, req.group_id, msg)
             status.generating = False
