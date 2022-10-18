@@ -3,12 +3,17 @@ import re
 
 class Const:
     def __init__(self):
+        self.request_type_self_host = 'FREE'
+        self.request_type_nai = 'NAI'
+        self.request_type_default = self.request_type_self_host
         self.tags_delimiter = '[,，]'
         self.full_model = 'nai-diffusion'
         self.safe_model = 'safe-diffusion'
         self.default_model = self.safe_model
         self.default_sampler = 'ddim'
-        self.default_steps = 28
+        self.max_free_steps = 28
+        self.max_free_size = 640 * 640
+        self.default_steps = self.max_free_steps
         self.default_scale = 7
         self.H_W = {
             '横图': [512, 768],
@@ -18,7 +23,10 @@ class Const:
             # '大竖图': [1024, 512],
             '大横图': [768, 1280],
             '大竖图': [1280, 768],
-            '大方图': [960, 960],
+            '大方图': [1024, 1024],
+            '巨横图': [1024, 1600],
+            '巨竖图': [1600, 1024],
+            '巨方图': [1280, 1280],
         }
         self.forbidden_words = [
             # 'sexy',
@@ -35,6 +43,8 @@ class Const:
         ]
         self.at_me = ['[CQ:at,qq=2356429990]', '@日和小萝莉']
         self.master_id = 304029882
+        # These people have access to the full model (including r18).
+        # They also bypass the forbidden_words.
         self.full_model_ids = [
             self.master_id,
             # i佬
@@ -46,7 +56,7 @@ class Const:
         ]
         self.max_num_pages = 4
 
-        self.img_gen_shape_pattern = re.compile(r'.*?(?:画|做|来|弄|搞|生成).*?(横图|竖图|方图|大横图|大竖图|大方图).*')
+        self.img_gen_shape_pattern = re.compile(r'.*?(?:画|做|来|弄|搞|生成).*?(横图|竖图|方图|大横图|大竖图|大方图|巨横图|巨竖图|巨方图).*')
         self.img_gen_tag_pattern = re.compile(r'.*标签.*?[<《]([^<《]+)[>》].*')
         self.img_gen_num_page_pattern = re.compile(r'.*?(\d+)[张幅个].*')
         self.img_gen_num_steps_pattern = re.compile(r'.*?\D+(\d+)[步].*')

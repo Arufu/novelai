@@ -3,23 +3,28 @@ import base64
 import json
 import os
 import random
-import re
-import threading
-from logging import Logger, StreamHandler
+from sys import path
 from os import environ as env
 from os.path import join, abspath, dirname
-from sys import path
-
+from novelai_api import NovelAI_API
+from aiohttp import ClientSession
+from logging import Logger, StreamHandler
 import requests
 from aiohttp import ClientSession
 from sanic import Sanic
+import base64
+import asyncio
+import threading
+import re
+import json
+from types import SimpleNamespace
 
 from constants import Const
 from imgGenReq import ImgGenReq
 from imgGenStatus import ImgGenStatus
 from messages import MeowMsgs
+import utils
 
-google_colab_endpoint = 'https://spray-reply-maria-forum.trycloudflare.com/generate-stream'
 debug_mode = False
 
 app = Sanic('qqbot')
@@ -27,7 +32,7 @@ app = Sanic('qqbot')
 const = Const()
 
 path.insert(0, abspath(join(dirname(__file__), '..')))
-required_env_var = ['NAI_USERNAME', 'NAI_PASSWORD', 'NAI_IMG_GEN_ENDPOINT']
+required_env_var = ['NAI_USERNAME', 'NAI_PASSWORD', 'NAI_IMG_GEN_ENDPOINT', 'SELF_HOST_ENDPOINT']
 
 if any(env_var not in env for env_var in required_env_var):
     raise RuntimeError('Please ensure that all environment variables are set')
@@ -36,6 +41,7 @@ NAI_username = env['NAI_USERNAME']
 NAI_password = env['NAI_PASSWORD']
 img_gen_endpoint = env['NAI_IMG_GEN_ENDPOINT']
 subscription_endpoint = env['NAI_SUB_ENDPOINT']
+self_host_endpoint = env['SELF_HOST_ENDPOINT']
 
 logger = Logger('NAIBot')
 logger.addHandler(StreamHandler())
@@ -71,21 +77,22 @@ AT_ME = const.at_me
 MASTER_ID = const.master_id
 MAX_NUM_PAGES = const.max_num_pages
 
+
 @app.websocket('/qqbot')
 async def qqbot(request, ws):
     async with ClientSession() as session:
 
         # Login nai and get login auth.
-        # api = NovelAI_API(session, logger=logger)
-        # auth = await api.high_level.login(NAI_username, NAI_password)
-        # logger.info(auth)
-        auth = None
+        api = NovelAI_API(session, logger=logger)
+        auth = await api.high_level.login(NAI_username, NAI_password)
+        logger.info(auth)
 
         gen_status = ImgGenStatus()
         gen_status.ws = ws
         gen_status.auth = auth
 
-        threading.Thread(target=asyncio.run, args=[gen_and_send(gen_status)], daemon=True).start()
+        threading.Thread(target=asyncio.run, args=[gen_and_send(gen_status, const.request_type_self_host)], daemon=True).start()
+        threading.Thread(target=asyncio.run, args=[gen_and_send(gen_status, const.request_type_nai)], daemon=True).start()
 
         while True:
             data = await ws.recv()
@@ -111,9 +118,10 @@ async def qqbot(request, ws):
                     elif any(kw in raw_message for kw in ['求助', '帮助', '功能', '自我介绍', '喵']):
                         reply_msg = '\n' + '\n'.join([
                             '我是聪明的画师日和大姐姐喵！',
-                            '1. 找我画画：先@大姐姐我，然后求画形状, 写上<标签>就行了喵！形状可以是竖图,横图,方图,可以加个大字增加尺寸喵！',
+                            '1. 找我画画：先@大姐姐我，然后求画形状, 写上<标签>就行了喵！形状可以是竖图,横图,方图,可以加个大字增加尺寸喵！或者加个巨字更进一步喵!',
                             '\t也可以要求画风值和步数，不要的标签和张数喵！',
-                            '\t比如：@大姐姐我，求画5张大竖图喵！标签是<corpse, gothic, guro>喵！不要<1boy,smile>喵！画风4,步数50喵！',
+                            '\t比如：@大姐姐我，求画5张巨竖图喵！标签是<corpse, gothic, guro>喵！不要<1boy,smile>喵！画风4,步数50喵！',
+                            '\t又比如：@大姐姐我，求张大横图喵！标签是<corpse, gothic, guro>喵！画风4,步数50喵！种子用1234567喵!',
                             '\t顺便喵不是必须的喵！',
                             '\t关于画风：一般在4到13之间喵！画风越低我的创造灵感越高，画出的图就越唯美喵！',
                             '\t画风越高，我越会在意你的标签，画出来的东西就越动漫风喵！自己抉择喵！',
@@ -137,10 +145,10 @@ async def qqbot(request, ws):
                             req = gen_status.prev_reqs[sender_id]
                             if sender_id == MASTER_ID:
                                 reply_msg = '这就马上再画一次上次的喵！(卑微)'
-                                gen_status.jump_the_queue(req)
+                                gen_status.jump_the_queue_self_host(req)
                             else:
                                 reply_msg = '竟然让大姐姐重新画上次的喵？那就只好画了喵！但是该排队还是要排的喵！'
-                                gen_status.enqueue(req)
+                                gen_status.enqueue_self_host(req)
                             await send_text_with_at(ws, group_id, sender_id, reply_msg)
                         else:
                             if sender_id == MASTER_ID:
@@ -159,14 +167,16 @@ async def qqbot(request, ws):
                     elif IMG_GEN_CLEAR_QUEUE_PATTERN.search(raw_message):
                         if sender_id == MASTER_ID:
                             reply_msg = '遵命喵！这就炸平等待队列喵！(发射火箭筒)'
-                            gen_status.clear_queue()
+                            gen_status.clear_queue_self_host()
                         else:
                             reply_msg = '你在想屁吃喵！'
                         await send_text_with_at(ws, group_id, sender_id, reply_msg)
                         continue
                     elif IMG_GEN_QUEUE_QUERY_PATTERN.search(raw_message):
-                        await send_text_with_at(ws, group_id, sender_id, '队列里有' +
-                                                str(len(gen_status.request_queue)) + '个请求喵！')
+                        reply_msg = '复杂图队列里有' + str(len(gen_status.request_queue_self_host)) + '个请求喵！\n'
+                        reply_msg += ('简单图队列里有' + str(len(gen_status.request_queue_nai)) + '个请求喵！\n')
+                        reply_msg += ('低优先度图队列里有' + str(len(gen_status.request_queue_low_priority)) + '个请求喵！\n')
+                        await send_text_with_at(ws, group_id, sender_id, reply_msg)
                         continue
                     elif IMG_GEN_SHAPE_PATTERN.search(raw_message) and \
                             (IMG_GEN_TAG_PATTERN.search(raw_message) or
@@ -224,12 +234,12 @@ async def qqbot(request, ws):
 
                             msg = []
                             add_at(sender_id, msg)
-                            if len(gen_status.request_queue) > 0:
+                            if len(gen_status.request_queue_self_host) > 0:
                                 if sender_id == MASTER_ID:
                                     reply_msg = '喵喵喵！这就插队给主人大人您画' + str(num_pages) + '张喵！马上马上喵！(振奋)'
                                 else:
                                     reply_msg = str(num_pages) + '张是吧喵？记在小本子上啦喵！不过正在画别的喵！慢慢等喵！' + \
-                                        '队列里有' + str(len(gen_status.request_queue)) + '个请求喵!'
+                                        '队列里有' + str(len(gen_status.request_queue_self_host)) + '个请求喵!'
                                 add_text(reply_msg, msg)
                             else:
                                 if sender_id == MASTER_ID:
@@ -294,13 +304,25 @@ async def qqbot(request, ws):
                             if model_m and (sender_id in const.full_model_ids):
                                 req.model = const.full_model
 
+                            # Modify free status.
+                            req.type = const.request_type_self_host if utils.check_if_pay(req) else \
+                                const.request_type_nai
+
+                            # Low priority requests go to self-host.
                             low_priority_m = IMG_GEN_LOW_PRIORITY_PATTERN.search(raw_message)
                             if low_priority_m:
                                 enqueue_func = gen_status.enqueue_low_priority
                                 jump_the_queue_func = gen_status.jump_the_queue_low_priority
                             else:
-                                enqueue_func = gen_status.enqueue
-                                jump_the_queue_func = gen_status.jump_the_queue
+                                # Normal requests go to either nai queue or self-host queue.
+                                if req.type == const.request_type_nai:
+                                    enqueue_func = gen_status.enqueue_nai
+                                    jump_the_queue_func = gen_status.jump_the_queue_nai
+                                elif req.type == const.request_type_self_host:
+                                    enqueue_func = gen_status.enqueue_self_host
+                                    jump_the_queue_func = gen_status.jump_the_queue_self_host
+                                else:
+                                    continue
 
                             for _ in range(num_pages):
                                 if sender_id == MASTER_ID:
@@ -334,21 +356,33 @@ async def send_group_msg(ws, group_id: str, msg: list):
     await ws.send(json.dumps(ret))
 
 
-async def gen_and_send(status: ImgGenStatus):
+async def gen_and_send(status: ImgGenStatus, queue_type: str):
     while True:
         # Skip when queue is empty
-        if (not status.request_queue) and (not status.low_priority_request_queue):
+        if queue_type == const.request_type_self_host:
+            if (not status.request_queue_self_host) and (not status.request_queue_low_priority):
+                await asyncio.sleep(1)
+                continue
+        elif queue_type == const.request_type_nai:
+            if not status.request_queue_nai:
+                await asyncio.sleep(1)
+                continue
+        else:
             await asyncio.sleep(1)
             continue
 
         # Get and remove an item from the left.
-        if status.request_queue:
-            req: ImgGenReq = status.request_queue.popleft()
-            status.generating = True
-        elif status.low_priority_request_queue:
-            req: ImgGenReq = status.low_priority_request_queue.popleft()
+        if queue_type == const.request_type_self_host:
+            if status.request_queue_self_host:
+                req: ImgGenReq = status.request_queue_self_host.popleft()
+            elif status.request_queue_low_priority:
+                req: ImgGenReq = status.request_queue_low_priority.popleft()
+            else:
+                continue
+        elif queue_type == const.request_type_nai:
+            req: ImgGenReq = status.request_queue_nai.popleft()
         else:
-            return
+            continue
 
         # Skip the request with forbidden tags.
         tags = re.split(const.tags_delimiter, req.tags)
@@ -360,7 +394,6 @@ async def gen_and_send(status: ImgGenStatus):
             reply_msg = '仔细看了一下才发现你的图<' + req.tags + '>太糟糕了喵！摔笔喵！不可以色色喵！生气气喵！'
             add_text(reply_msg, msg)
             await send_group_msg(status.ws, req.group_id, msg)
-            status.generating = False
             continue
 
         img_path = ''
@@ -380,7 +413,6 @@ async def gen_and_send(status: ImgGenStatus):
             # reply_msg += ' ...我这就重新画喵！'
             add_text(reply_msg, msg)
             await send_group_msg(status.ws, req.group_id, msg)
-            status.generating = False
             # Retry on fail (may cause repeatedly sending messages).
             # status.jump_the_queue(req)
             continue
@@ -395,7 +427,6 @@ async def gen_and_send(status: ImgGenStatus):
         await send_group_msg(status.ws, req.group_id, msg)
         # Record last request for each user.
         status.prev_reqs[req.sender_id] = req
-        status.generating = False
         status.counter += 1
 
         await asyncio.sleep(0.1)
@@ -437,11 +468,11 @@ def add_img(img_path: str, msg: list):
 def generate_img(req: ImgGenReq, auth):
     seed = random.randint(0, 2 ** 32)
     try:
-        # headers = {'authorization': 'Bearer ' + auth,
-        #            'content-type': 'application/json'}
-
+        headers = {'authorization': 'Bearer ' + auth,
+                   'content-type': 'application/json'}
         # Generate image.
-        img_gen_data = {'input': req.tags,
+        if req.type == const.request_type_nai:
+            img_gen_data = {'input': req.tags,
                         'model': req.model,
                         'parameters': {
                             'seed': req.seed or seed,
@@ -455,23 +486,23 @@ def generate_img(req: ImgGenReq, auth):
                             'ucPreset': 0,
                         }
                         }
-
-        # Temporary google colab:
-        google_colab_img_gen_data = {
-            'height': req.height,
-            'n_samples': 1,
-            'prompt': req.tags,
-            'sampler': req.sampler,
-            'scale': req.scale,
-            'seed': req.seed or seed,
-            'steps': req.steps,
-            'uc': req.uc,
-            'ucPreset': 0,
-            'width': req.width,
-        }
-
-        # img_gen_api_request = requests.post(img_gen_endpoint, json=img_gen_data, headers=headers)
-        img_gen_api_request = requests.post(google_colab_endpoint, json=google_colab_img_gen_data)
+            img_gen_api_request = requests.post(img_gen_endpoint, json=img_gen_data, headers=headers)
+        elif req.type == const.request_type_self_host:
+            img_gen_data = {
+                'height': req.height,
+                'n_samples': 1,
+                'prompt': req.tags,
+                'sampler': req.sampler,
+                'scale': req.scale,
+                'seed': req.seed or seed,
+                'steps': req.steps,
+                'uc': req.uc,
+                'ucPreset': 0,
+                'width': req.width,
+            }
+            img_gen_api_request = requests.post(self_host_endpoint, json=img_gen_data)
+        else:
+            return ''
 
         img_gen_output = img_gen_api_request.content
         image64 = img_gen_output[27:-2]
@@ -483,14 +514,14 @@ def generate_img(req: ImgGenReq, auth):
             f.write(img)
         logger.info(filename + ' generated under path ' + OUTPUT_PATH + '.')
 
-        # Obtain points.
-        # obtain_points_api_request = requests.get(subscription_endpoint, headers=headers)
-        # sub_output = obtain_points_api_request.json()
-        # points = sub_output['trainingStepsLeft']
-        # points_by_sub = points['fixedTrainingStepsLeft']
-        # points_purchased = points['purchasedTrainingSteps']
-        # req.points_left = points_by_sub + points_purchased
-        req.points_left = 0
+        if req.type == const.request_type_nai:
+            # Obtain points.
+            obtain_points_api_request = requests.get(subscription_endpoint, headers=headers)
+            sub_output = obtain_points_api_request.json()
+            points = sub_output['trainingStepsLeft']
+            points_by_sub = points['fixedTrainingStepsLeft']
+            points_purchased = points['purchasedTrainingSteps']
+            req.points_left = points_by_sub + points_purchased
 
         return img_path
     except Exception as err:

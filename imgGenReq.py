@@ -16,4 +16,5 @@ class ImgGenReq:
         self.sampler = const.default_sampler
         self.seed = None
         self.uc = const.default_uc
-        self.points_left = None
+        self.points_left = 0
+        self.type = const.request_type_default
