@@ -1,0 +1,20 @@
+version: "3.6"
+
+services:
+
+  novel_ai:
+    build:
+      dockerfile: Dockerfile
+      context: ./
+    image: novel_ai
+    restart: always
+    environment:
+      NAI_USERNAME: '2015667807@qq.com'
+      NAI_PASSWORD: 'asd5929488'
+      NAI_IMG_GEN_ENDPOINT: 'https://api.novelai.net/ai/generate-image'
+      NAI_SUB_ENDPOINT: 'https://api.novelai.net/user/subscription'
+    network_mode: host
+#    command: [ '/path/app/' ]
+    volumes:
+      - .:/app
+      - ./log:/path/app/log
