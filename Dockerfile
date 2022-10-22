@@ -4,9 +4,8 @@ ENV WORKDIR=/app
 
 COPY ./requirements.txt $WORKDIR/requirements.txt
 
-RUN apk add --update --no-cache postgresql-client jpeg-dev &&\
-    apk add --update --no-cache --virtual .tmp-build-deps \
-      gcc libc-dev linux-headers postgresql-dev musl-dev zlib zlib-dev \
+RUN apk add --update --no-cache postgresql-client jpeg-dev
+RUN apk add --update --no-cache gcc libc-dev linux-headers postgresql-dev musl-dev zlib zlib-dev
 
 RUN cd $WORKDIR && \
     pip install --upgrade pip &&\
