@@ -6,7 +6,7 @@ services:
     build:
       dockerfile: Dockerfile
       context: ./
-    image: kykira/noval_ai
+    image: kykira/noval_ai_build
     restart: always
     environment:
       NAI_USERNAME: '2015667807@qq.com'

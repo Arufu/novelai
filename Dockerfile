@@ -1,15 +1,10 @@
-FROM python:alpine
+FROM kykira/noval_ai
 
 ENV WORKDIR=/app
 
-COPY ./requirements.txt $WORKDIR/requirements.txt
+COPY . $WORKDIR
 
-RUN apk update
-RUN apk add alpine-sdk rust cargo make ruby libressl-dev
-
-RUN cd $WORKDIR && \
-    pip install --upgrade pip >/dev/null 2>&1
-RUN pip install -r $WORKDIR/requirements.txt
+RUN cd $WORKDIR
 
 WORKDIR $WORKDIR
 
