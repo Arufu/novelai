@@ -43,6 +43,8 @@ class Const:
             1972742583,
             # 清
             1322019544,
+            # ky
+            694009079,
         ]
         self.max_num_pages = 4
 
