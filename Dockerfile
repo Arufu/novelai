@@ -1,5 +1,6 @@
 FROM python:alpine
 
+USER user
 ENV WORKDIR=/app
 
 COPY ./requirements.txt $WORKDIR/requirements.txt
