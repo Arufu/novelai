@@ -5,7 +5,7 @@ ENV WORKDIR=/app
 COPY ./requirements.txt $WORKDIR/requirements.txt
 
 RUN apk update
-RUN apk add apline-sdk
+RUN apk add alpine-sdk
 
 RUN cd $WORKDIR && \
     pip install --upgrade pip >/dev/null 2>&1
