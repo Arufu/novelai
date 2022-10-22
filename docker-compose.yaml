@@ -6,7 +6,7 @@ services:
     build:
       dockerfile: Dockerfile
       context: ./
-    image: novel_ai
+    image: kykira/noval_ai_build
     restart: always
     environment:
       NAI_USERNAME: '2015667807@qq.com'
@@ -14,7 +14,7 @@ services:
       NAI_IMG_GEN_ENDPOINT: 'https://api.novelai.net/ai/generate-image'
       NAI_SUB_ENDPOINT: 'https://api.novelai.net/user/subscription'
     network_mode: host
-#    command: [ '/path/app/' ]
-    volumes:
-      - .:/app
-      - ./log:/path/app/log
+    command: [ 'sh','/app/start.sh' ]
+#    volumes:
+#      - .:/app
+#      - ./log:/path/app/log

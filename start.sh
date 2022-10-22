@@ -1,3 +1,2 @@
-#bash /app/go-cqhttp &
+nohup /app/go-cqhttp &
 python server_private.py
-
